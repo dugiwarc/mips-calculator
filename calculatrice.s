@@ -88,6 +88,9 @@
 	fp0: 			.float 		0.0
 	fp1: 			.float 		1.0
 	fp2:			.float		2.0
+	ffp0:			.double		0.0
+	ffp1:			.double		1.0
+	ffp2:			.double		2.0
 
 	# Characters
 	operators: 		.byte 		'+' '-' '*' '/'
@@ -126,8 +129,7 @@
 	string_switch_modes:	.asciiz		"switch_modes"
 	string_opposite:	.asciiz		"opposite"
 	string_inverse:		.asciiz		"inverse"
-	hex_value:		.byte		'0' '0' '0' '0' '0' '0' '0' '0'
-	mantissa_value:		.byte		'0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0' '0'
+	hex_value:		.byte		' ' ' ' ' ' ' ' ' ' ' ' ' ' ' '
 
 ################################################################################
 				# Text
@@ -149,18 +151,24 @@ __start:
 		j 		calculator_selection
 		
 	switch_modes:
-		beq		$v0		0		trigger_mode_float
-		beq		$v0		1		trigger_mode_integer
+		beq		$v0		1		trigger_mode_float
+		beq		$v0		0		trigger_mode_integer
 		
 	trigger_mode_float:
-		li		$v0		0
+		li		$v0		1
 		j 		calculator_selection
 		
 	trigger_mode_integer:
-		li		$v0		1		
+		li		$v0		0		
 		
 	calculator_selection: 
-  		bne 		$v0 		$0 		calculator_select_float	
+		# listeners
+  		beq 		$v1 		0		calculator_select_integer
+  		beq 		$v0 		0		calculator_select_integer
+  		beq		$v1		1		calculator_select_float
+  		beq 		$v0 		1		calculator_select_float
+  		beq		$v1		2		calculator_select_double
+  		beq		$v1		3		program_exit	
   		calculator_select_integer:
     			jal 		calculator_integer
     			j 		program_exit
@@ -168,6 +176,10 @@ __start:
 	  	calculator_select_float:
     			jal 		calculator_float
     			j 		program_exit
+    		
+    		calculator_select_double:
+    			jal		calculator_double
+    			j		program_exit
   		
   		calculator_select_default:
     			j program_exit
@@ -178,6 +190,179 @@ __start:
 
 ################################################################################
 				# Calculator main
+################################################################################
+
+	calculator_double:
+  		addi 		$sp 			$sp 		-32
+  		sw 		$ra 			0($sp)
+  		sw 		$a0 			4($sp)
+  		swc1		$f0 			8($sp)
+  		swc1 		$f12 			16($sp)
+  		swc1 		$f14 			24($sp)
+
+  	debugger_double_mode_stderr:
+  		la 		$a0 			string_calculator
+  		jal 		print_string_stderr
+  		la 		$a0 			string_double
+  		jal 		print_string_stderr
+  		jal 		print_newline_stderr
+  		
+  	calculator_double_start:
+  		# read first operand
+    		jal 		read_double
+    		# save it to $s0
+    		mov.d 		$f12 		$f0
+    		
+    		calculator_double_loop:
+		    	# read operation function and write to $f0
+    			jal 		read_operator 
+    			# check operator's length function
+    			jal 		strlen
+    			# if operator's not a +, -, * or /
+    			bgt		$v0 		2 		find_advanced_operator_double
+    			# save index in $s3
+    			li 		$s3 		0
+    			# load @ of operators array in $s1
+    			la 		$s1		operators	
+  		
+  		find_basic_operator_loop_double:
+    			# if we have checked all four operators
+    			beq 		$s3 		4 		calculator_double_exit
+    			# load first operator into $a1
+    			la		$a1 		0($s1)
+    			# load char length
+    			li  		$a2 		1
+    			# execute simple_strncmp(string $a1, int $a2)
+    			jal 		simple_strncmp      
+    			# if operator found to be equal to the one in the input exit the loop
+    			beq		$v0 		1 		execute_basic_operator_double
+			# if not found increment to the next operator
+   	 		addi 		$s1 		$s1 		1
+   	 		# increment index
+    			addi 		$s3 		$s3 		1
+    			j 		find_basic_operator_loop_double
+    			
+    		 execute_basic_operator_double:
+    			# read second operand
+    			jal 		read_double
+    			# save second operand to $a0
+    			mov.d 		$f14		$f0
+
+		 	# redirect to target function based on the index reached in find_basic_operator_loop
+    			beq 		$s3		0		add_double
+    			beq 		$s3		1		subtract_double
+    			beq 		$s3		2		multiply_double
+    			beq 		$s3		3		divide_double
+    			
+    		# execute function
+    		add_double:
+    			jal 		operation_double_addition
+    			j 		calculator_double_loop_end
+    
+    		subtract_double:
+    			jal 		operation_double_substraction
+    			j		calculator_double_loop_end
+    
+   		divide_double:
+    			jal 		operation_double_division
+    			j 		calculator_double_loop_end
+    
+    		multiply_double:
+    			jal 		operation_double_multiplication
+    			j 		calculator_double_loop_end
+    			
+    		find_advanced_operator_double:
+  
+			# get operator's length
+			jal 		strlen
+			# get rid of the extra \0
+			addi		$v0			$v0			-1
+			# save operator's length in $a2
+			move		$a2			$v0
+		
+			# check against "max"
+			la 		$a1			string_max
+			jal 		simple_strncmp
+			beq 		$v0			1 		get_max_double
+		
+			# check against "min"
+    			la 		$a1			string_min
+			jal 		simple_strncmp
+			beq 		$v0			1 		get_min_double
+		
+			# check against "abs"
+			la 		$a1			string_abs
+			jal 		simple_strncmp
+			beq 		$v0			1 		get_abs_double
+		
+			# check against "pow"
+			la 		$a1			string_pow
+			jal 		simple_strncmp
+			beq 		$v0			1 		get_pow_double
+			
+			jal		strlen
+			# safeguards for unkown operations
+			beq		$v0		4		calculator_double_exit
+			bgt		$v0		4		calculator_double_exit
+			beq		$v0		1		calculator_double_exit
+			beq		$v0		2		calculator_double_exit
+			
+			j		calculator_double_loop_end
+					
+			# execute advanced operator function
+			get_min_double:
+				jal		move_doubles
+				jal 		operation_double_minimum
+				j 		calculator_double_loop_end
+				
+			get_max_double:
+				jal		move_doubles
+				jal 		operation_double_maximum
+				j 		calculator_double_loop_end
+						
+			get_abs_double:
+				jal 		operation_double_abs
+				j 		calculator_double_loop_end
+				
+    			get_pow_double:
+    				jal		move_doubles
+				jal 		operation_double_pow
+				j 		calculator_double_loop_end
+				
+			move_doubles:
+				addi		$sp		$sp		-4
+				sw		$ra		0($sp)
+				
+				jal		read_double
+				mov.d		$f14		$f0
+				
+				lw		$ra		0($sp)
+				addi		$sp		$sp		4
+				jr		$ra
+    		
+    		
+    		
+    		calculator_double_loop_end:
+      			# print result
+      			mov.d 		$f12 		$f0
+      			jal 		print_double
+      			jal 		print_newline
+      
+      			# loop
+      			j calculator_double_loop
+  		
+  		
+	calculator_double_exit:
+  		lw 		$ra 			0($sp)
+  		lw 		$a0 			4($sp)
+  		lwc1 		$f0 			8($sp)
+  		lwc1 		$f12 			16($sp)
+  		lwc1 		$f14 			24($sp)
+		addi 		$sp 			$sp 		32  		
+  		jr		$ra
+		
+################################################################################
+				# Calculator integer
 ################################################################################
 
 	
@@ -198,6 +383,7 @@ __start:
   		la 		$a0 		string_integer
   		jal 		print_string_stderr
   		jal 		print_newline_stderr
+
 
   	calculator_integer_start:
   		# read first operand
@@ -249,7 +435,7 @@ __start:
     			beq 		$s3		1		subtract_integers
     			beq 		$s3		2		multiply_integers
     			beq 		$s3		3		divide_integers
-    		
+    			
     		# execute function
     		add_integers:
     			jal 		operation_integer_addition
@@ -342,7 +528,7 @@ __start:
 			# check for "print_binary" command
 			jal		check_for_print_binary_string
 			
-			# check for "print_hex" command
+			# check for "print_hexa" command
 			jal		check_for_print_hexa_string
 			
 			# check for "opposite" command
@@ -492,6 +678,8 @@ __start:
 			jal 		simple_strncmp
 			beq 		$v0			1 		get_pow_float
 			
+			jal		strlen
+			beq		$v0		4		calculator_float_exit
 			j		continue_bonus_functions_float
 					
 			# execute advanced operator function
@@ -531,9 +719,6 @@ __start:
 
 			# set calculator mode in $v0
 			li		$v0			0
-			la	$a0		string_abs
-			li	$v0		4
-			syscall
 			# set trigger for unknown operations
 			li		$t7			1
 			# check for "switch_modes" command
@@ -598,50 +783,70 @@ __start:
   		sw 		$s0 		12($sp)
   		sw 		$s1 		16($sp)
 
-  	# Copy argc and argv in $s0 and $s1
-  	move 		$s0 		$a0
-  	move 		$s1 		$a1
-  	# Set default return value
-  	li 		$v0 		0
+  		# Copy argc and argv in $s0 and $s1
+  		move 		$s0 		$a0
+  		move 		$s1 		$a1
+  		# Set default return value
+  		li 		$v0 		0
 
-  handle_cli_args_loop:
-    beq $s0 $0 handle_cli_args_exit
+ 	handle_cli_args_loop:
+    		beq 		$s0 		$0 		handle_cli_args_exit
 
-    # Debugging info on stderr
-    handle_cli_args_loop_debug:
-      # Print the prefix "arg: "
-      la $a0 string_arg
-      jal print_string_stderr
-      # Print current arg on stderr
-      lw $a0 ($s1)
-      jal print_string_stderr
-      jal print_space_stderr
-      jal print_newline_stderr
+    		# Debugging info on stderr
+    		handle_cli_args_loop_debug:
+      		# Print the prefix "arg: "
+      		la 		$a0 		string_arg
+      		jal 		print_string_stderr
+      		# Print current arg on stderr
+      		lw 		$a0 		0($s1)
+      		jal 		print_string_stderr
+      		jal 		print_space_stderr
+      		jal 		print_newline_stderr
+      		
+      		# return index for redirecting to the right calculator
+      		li		$v1		0
+    	# Process the current argument
+    	handle_cli_args_loop_current_arg_handling:
+      		# compare argument with pre-set modes
+      		# load each string into $a1 and check against input to retrieve the index
+      		
+      		# check "integer"
+      		la 		$a1 		string_integer    
+      		li		$a2		7 		
+      		jal 		simple_strncmp
+		jal		compare_strings
+ 
+      		# check "float"
+		la		$a1		string_float
+		li		$a2		5
+		jal 		simple_strncmp
+      		jal		compare_strings
+      		
+		# check "double"
+		la		$a1		string_double
+		li		$a2		6
+		jal		simple_strncmp
+		jal		compare_strings
+		
+		compare_strings:
+      			beq 		$v0 		1 		handle_cli_args_exit
+      			addi		$v1		$v1		1
+			jr		$ra
+			
+    	handle_cli_args_loop_end:
+      		# Move on to the next argument (akin to argc--, argv++)
+      		add 		$s0 		$s0 		-1
+      		add 		$s1 		$s1 		4
+      		j 		handle_cli_args_loop
 
-    # Process the current argument
-    handle_cli_args_loop_current_arg_handling:
-      # Compare the argument with authorized values
-      # Set $v0 and exit if an authorized value is detected
-      #
-      # TODO
-      la $a1 string_float
-      jal simple_strncmp
-      beq $v0 1 handle_cli_args_exit
-
-    handle_cli_args_loop_end:
-      # Move on to the next argument (akin to argc--, argv++)
-      add $s0 $s0 -1
-      add $s1 $s1 4
-      j handle_cli_args_loop
-
-  handle_cli_args_exit:
-    lw $ra 0($sp)
-    lw $a0 4($sp)
-    lw $a1 8($sp)
-    lw $s0 12($sp)
-    lw $s1 16($sp)
-    addu $sp $sp 20
-    jr $ra
+  	handle_cli_args_exit:
+    		lw 		$ra	 	0($sp)
+    		lw 		$a0 		4($sp)
+    		lw 		$a1 		8($sp)
+    		lw 		$s0 		12($sp)
+    		lw 		$s1 		16($sp)
+    		addu 		$sp 		$sp	 	20
+    		jr 		$ra
 
 ################################################################################
 # I/O
@@ -684,8 +889,9 @@ print_newline:
   sw $ra 0($sp)
   sw $a0 4($sp)
 
-  la $a0 string_newline
-  jal print_string
+  addi 	$a0		$0		0xA 	#ascii code for LF, if you have any trouble try 0xD for CR.
+  addi 	$v0 		$0		0xB 	#syscall 11 prints the lower 8 bits of $a0 as an ascii character.
+  syscall
 
   print_newline_exit:
     lw $ra 0($sp)
@@ -756,6 +962,18 @@ print_float:
     addu $sp $sp 8
     jr $ra
 
+ print_double:
+	addi	$sp	$sp	-12
+	sw	$ra	0($sp)
+	swc1	$f12	4($sp)
+	
+	li	$v0	3
+	syscall
+	
+	lw	$ra	0($sp)
+	lwc1	$f12	4($sp)
+	addi	$sp	$sp	12
+	jr	$ra
 #-------------------------------------------------------------------------------
 # stderr
 #-------------------------------------------------------------------------------
@@ -860,7 +1078,12 @@ read_int:
   li $v0 5
   syscall
   jr $ra
-
+  
+  
+ read_double:
+	li	$v0	7
+	syscall
+	jr	$ra
 ## Read a float
 ##
 ## Inputs:
@@ -1082,7 +1305,88 @@ operation_integer_pow:
 operation_integer_abs: 
   abs $v0 $a0
   jr $ra
+  
+  
+  
+################################################################################
+# Double Point Operations
+################################################################################
+operation_double_addition:
+ add.d	$f0	$f12	$f14
+ jr	$ra
+operation_double_substraction:
+ sub.d	$f0	$f12	$f14
+ jr	$ra
+operation_double_multiplication:
+ mul.d	$f0	$f12	$f14
+ jr	$ra
+ operation_double_division:
+ div.d	$f0	$f12	$f14
+ jr	$ra
+ 
+ 
+ operation_double_minimum:
+    	c.le.d	$f12 	$f14	
+    	bc1t return_first_arg_min_double
+  	j return_second_arg_min_double
+  	return_first_arg_min_double:
+  		mov.d $f0 $f12
+  		j continue_min_double
+  	return_second_arg_min_double:
+  		mov.d $f0 $f14
+  	continue_min_double:		
+  		jr $ra
 
+## Float maximum
+##
+## Inputs
+## $f12: first argument
+## $f13: second argument
+##
+## Outputs
+## $f0: max($f12, $f13)
+operation_double_maximum:
+      	c.le.d		$f12		$f14	
+      	bc1f 		return_first_arg_max_double
+  	j 		return_second_arg_max_double
+  	
+  	return_first_arg_max_double:
+  		mov.d 		$f0 		$f12
+  		j		continue_max_double
+  		
+  	return_second_arg_max_double:
+  		mov.d		$f0 		$f14
+  		
+  	continue_max_double:		
+  		jr 		$ra
+
+  operation_double_pow:
+
+      addi 		$sp 		$sp		-12            # Allocate space in stack
+      swc1 		$f12 		0($sp)                        # Store reg that holds current num
+      sw 		$ra 		8($sp)                        # Store previous PC
+
+      lwc1 		$f2		ffp0
+      lwc1 		$f0  		ffp1                           # Init return value
+      c.eq.d 		$f14 		$f2
+      bc1t 		pow_done_double              		      # Finish if param is 0
+
+      # Otherwise, continue recursion
+      sub.d		$f14 		$f14 		$f0
+      jal 		operation_double_pow
+
+      mul.d 		$f0		$f0 		$f12          # Multiplication is done
+
+      pow_done_double:
+        lwc1 		$f12		0($sp)
+        lw		$ra 		8($sp)                     # Restore the PC
+        addi 		$sp		$sp		12
+
+        jr $ra
+
+  operation_double_abs:
+  	abs.d 		$f0 		$f12
+  	jr 		$ra
 ################################################################################
 # Floating Point Operations
 ################################################################################
@@ -1405,6 +1709,8 @@ operation_float_maximum:
  	exit_decompose_to_get_exponent_loop:
  		addi		$a1		$a1		127
  		move		$s0		$a1
+ 		# let print_binary know it's coming from a different calculator
+ 		li		$t6		1
  		j		print_binary
  
  
@@ -1434,10 +1740,11 @@ operation_float_maximum:
 		addi 		$a0		$0		0xA 	#ascii code for LF, if you have any trouble try 0xD for CR.
         	addi 		$v0 		$0		0xB 	#syscall 11 prints the lower 8 bits of $a0 as an ascii character.
 		syscall
-
+	beq	$t6	1 	move_back_to_floats
 	j	calculator_integer_start
 # vim:ft=mips
-
+ move_back_to_floats:
+ 	j	calculator_float_start
  execute_print_significand:
  	# load 48 into $a0
  	la		$s0		string_0
@@ -1505,7 +1812,7 @@ operation_float_maximum:
  		rem		$s0		$s0		16
  		bge		$s0		10		get_diff_hex
 		jal		write_to_array
- 		addi		$a1		$a1		-1
+ 		
  	
  	continue_print_hexa_post_save:
  		move		$s0		$s1
@@ -1513,35 +1820,56 @@ operation_float_maximum:
  	
  	exit_print_hexa_loop:
  		bge		$s0		10		get_diff_hex_and_exit
-		jal		write_to_array
- 		j		continue_exit_loop
- 		
- 	get_diff_hex_and_exit:
- 		jal		get_diff_hex_function
- 		j		continue_exit_loop
+		jal		write_to_array_and_exit
+ 		j		continue_exit_loop_hexa
+ 	
  		
  	write_to_array:
+ 		addi		$sp		$sp		-4
+ 		sw		$ra		0($sp)
+		jal		write_to_array_code
+ 		addi		$a1		$a1		-1
+ 		lw		$ra		0($sp)
+ 		addi		$sp		$sp		4
+ 		jr		$ra
+ 		
+ 	write_to_array_and_exit:
+ 		jal		write_to_array_code
+ 		j		continue_exit_loop_hexa
+ 		
+ 	write_to_array_code:
  		addi		$s0		$s0		48
  		sb		$s0		0($a1)
  		addi		$s0		$s0		-48
  		jr		$ra
- 			
- 	get_diff_hex_function:
-	 	addi		$s0		$s0		-10
+ 		
+ 	get_diff_hex_code:
+ 		addi		$s0		$s0		-10
 	 	addi		$s0		$s0		65
-	 	sb		$s0		0($a1)
-	 	addi		$a1		$a1		-1
+	 	sb		$s0		0($a1) 	
 	 	jr		$ra
- 	
- 	
- 	get_diff_hex:
+ 		
+ 	 get_diff_hex:
 		jal		get_diff_hex_function
  		j		continue_print_hexa_post_save
+ 		
+ 	get_diff_hex_function:
+ 		addi		$sp		$sp		-4
+ 		sw		$ra		0($sp)
+		jal		get_diff_hex_code
+	 	addi		$a1		$a1		-1
+	 	lw		$ra		0($sp)
+	 	addi		$sp		$sp		4
+	 	jr		$ra
+ 			
+ 	get_diff_hex_and_exit:
+	 	jal		get_diff_hex_code
  	
- 	continue_exit_loop:
+ 	continue_exit_loop_hexa:
         	la		$a0		0($a1)
        	 	li		$v0		4
 		syscall
+		jal		print_newline
 		j 		calculator_integer_start
  	
  	

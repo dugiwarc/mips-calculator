@@ -122,14 +122,14 @@
 	string_abs: 		.asciiz 	"abs"
 	
 # Bonus
-	string_print_binary:	.asciiz		"print_binary"
-	string_print_hexa:	.asciiz		"print_hexa"
-	print_significand:	.asciiz		"print_significand"
-	print_exponent:		.asciiz		"print_exponent"
-	string_switch_modes:	.asciiz		"switch_modes"
-	string_opposite:	.asciiz		"opposite"
-	string_inverse:		.asciiz		"inverse"
-	hex_value:		.byte		' ' ' ' ' ' ' ' ' ' ' ' ' ' ' '
+	string_print_binary:	 	.asciiz		"print_binary"
+	string_print_hexa:	 	.asciiz		"print_hexa"
+	string_print_significand:	.asciiz		"print_significand"
+	string_print_exponent:	 	.asciiz		"print_exponent"
+	string_switch_modes:	 	.asciiz		"switch_modes"
+	string_opposite:	 	.asciiz		"opposite"
+	string_inverse:		 	.asciiz		"inverse"
+	hex_value:		 	.byte		' ' ' ' ' ' ' ' ' ' ' ' ' ' ' '
 
 ################################################################################
 				# Text
@@ -150,23 +150,17 @@ __start:
   		li 		$v0 		0
 		j 		calculator_selection
 		
-	switch_modes:
-		beq		$v0		1		trigger_mode_float
-		beq		$v0		0		trigger_mode_integer
-		
 	trigger_mode_float:
-		li		$v0		1
+		li		$v1		1
 		j 		calculator_selection
 		
 	trigger_mode_integer:
-		li		$v0		0		
+		li		$v1		0		
 		
 	calculator_selection: 
 		# listeners
   		beq 		$v1 		0		calculator_select_integer
-  		beq 		$v0 		0		calculator_select_integer
   		beq		$v1		1		calculator_select_float
-  		beq 		$v0 		1		calculator_select_float
   		beq		$v1		2		calculator_select_double
   		beq		$v1		3		program_exit	
   		calculator_select_integer:
@@ -398,7 +392,8 @@ __start:
     		# check operator's length function
     		jal 		strlen	
     		# if operator's length greater than 4, go to find_advanced_operator
-    		bge		$v0 		4 		find_advanced_operator
+    		beq		$v0 		4		find_advanced_operator
+    		bgt		$v0		4		continue_to_bonus_functions_integer
     		# save index in $s3
     		li 		$s3 		0
     		# load @ of operators array in $s1
@@ -481,7 +476,8 @@ __start:
 			jal 		simple_strncmp
 			beq 		$v0			1 			get_pow
 			
-			j		continue_to_bonus_functions_integer
+			# if nothing has matched within the 3 letter operators
+			j		calculator_integer_exit
 		
 		
 		# execute advanced operator function
@@ -517,27 +513,36 @@ __start:
 			jr		$ra
 			
 		continue_to_bonus_functions_integer:
-			# load global trigger for unchecked functions
-			li		$t7		0
-			# set calculator mode in $v0
-			li		$v0			1
+
+			# set integer calculator mode in $v1
+			li		$v1			0
 			
+			# set default return value to 0
+			li		$v0		0
 			# check for "switch_modes" command
+			# if true jumps to the right calculator
 			jal		check_for_switch_string
+			beq		$v0			1		switch_modes
+			
 
 			# check for "print_binary" command
 			jal		check_for_print_binary_string
+			beq		$v0		1		calculator_integer_start
 			
 			# check for "print_hexa" command
 			jal		check_for_print_hexa_string
+			beq		$v0		1		calculator_integer_start
 			
 			# check for "opposite" command
-			jal		check_for_opposite_string_integer
+			jal		check_for_opposite_string
+			beq		$v0		1		get_opposite_integer
 			
 			# check for "inverse" command
-			jal		check_for_inverse_string_integer
-			
-			beqz		$t1		unknown_operator
+			jal		check_for_inverse_string
+			beq		$v0		1		get_inverse_integer
+
+			# no functions got calledm exit
+			beq		$v0		0		calculator_integer_exit
 			
 					
     		# loop or exit the program
@@ -596,7 +601,8 @@ __start:
     			# check operation's length
     			jal 		strlen
     			# if length == 4 go to advanced operations
-    			bge 		$v0 		4 		find_advanced_operator_float
+    			beq 		$v0 		4 		find_advanced_operator_float
+    			bgt		$v0		4		continue_bonus_functions_float
         		# save index == 0 in $s3
     			add 		$s3 		$0 		$0
     			# load @ of array containing basic operators chars in $s1
@@ -604,7 +610,7 @@ __start:
     
     		find_basic_operator_loop_float:
     			# if nothing matched within our array of basic operations, exit the loop
-    			beq 		$s3 		4 		calculator_integer_exit
+    			beq 		$s3 		4 		calculator_float_exit
     			# load first operation from our array
     			la		$a1 		0($s1)
     			# load length of substring to be checked
@@ -620,6 +626,7 @@ __start:
     			j 		find_basic_operator_loop_float
     			
     		execute_basic_operator_float:
+    
     			# move first operand to $f12
     			mov.s 		$f12 		$f0
     			# read second operand
@@ -680,7 +687,7 @@ __start:
 			
 			jal		strlen
 			beq		$v0		4		calculator_float_exit
-			j		continue_bonus_functions_float
+			j		calculator_float_exit
 					
 			# execute advanced operator function
 			get_min_float:
@@ -718,30 +725,29 @@ __start:
 			continue_bonus_functions_float:
 
 			# set calculator mode in $v0
-			li		$v0			0
-			# set trigger for unknown operations
-			li		$t7			1
+			li		$v1			1
+
 			# check for "switch_modes" command
 			jal 		check_for_switch_string
+			beq		$v0			1		switch_modes
 			
 			# check for "print_significand" command
 			jal		check_for_print_significand
+			beq		$v0		1		execute_print_significand
 			
 			# check for "print_exponent"
 			jal		check_for_print_exponent
+			beq		$v0		1		print_exponent_function
 			
 			# check for "opposite"
-			jal		check_for_opposite_string_float
-			
+			jal		check_for_opposite_string
+			beq		$v0		1		get_opposite_float
 			# check for "inverse"
-			jal		check_for_inverse_string_float
+			jal		check_for_inverse_string
+			beq		$v0		1		get_inverse_float
 			
-			beqz		$t7		unknown_operator
+			beq		$v0		0		calculator_float_exit
 			
-			j		calculator_float_loop_end
-			unknown_operator:
-				li	$v0	10
-				syscall
 
     		calculator_float_loop_end:
       			# Set the result as 'new first arg'
@@ -1192,15 +1198,13 @@ simple_strncmp:
 
   # Initialize result to true
   li $v0 1
-
   simple_strncmp_loop:
     # Have we compared n characters?
     ble $a2 $0 simple_strncmp_exit
 
     # Load the characters for comparison
     lb $t0 0($a0)
-    lb $t1 0($a1)
-
+    lb $t1 0($a1) 
     # Characters differ
     bne	$t0 $t1 simple_strncmp_false
 
@@ -1209,9 +1213,8 @@ simple_strncmp:
     addi $a0 $a0 1
     addi $a1 $a1 1
     addi $a2 $a2 -1
+    beqz $t1 simple_strncmp_exit_of_string
     j simple_strncmp_loop
-    beqz $t0 simple_strncmp_exit_of_string
-    
 
   simple_strncmp_exit_of_string:
     # (Sub)Strings match
@@ -1509,70 +1512,78 @@ operation_float_maximum:
   	jr 		$ra
   	
   check_for_print_significand:
-  	addi		$sp		$sp		-4
-  	sw		$ra		0($sp)
+  	# done
+ 	addi		$sp		$sp		-16
+ 	sw		$ra		0($sp)
+ 	sw		$a0		4($sp)
+ 	sw		$a1		8($sp)
+ 	sw		$a2		12($sp)
   	
-  	jal		get_string_length_extended
-  	
-  	la		$a1		print_significand
-  	jal		simple_strncmp
-  	
-  	move		$t1		$v0
-  	beq		$v0		1		execute_print_significand
-  	
-  	lw		$ra		0($sp)
-  	addi		$sp		$sp		4
+  	# move input string to $a1
+ 	move		$a1		$a0
+ 	# move validation string to $a0    	
+  	la		$a0		string_print_significand
+  	jal		strlen
+  	# move output to $a2
+  	move		$a2		$v0
+  	jal		simple_strncmp  	
+ 
+ 	lw		$ra		0($sp)
+ 	lw		$a0		4($sp)
+ 	lw		$a1		8($sp)
+ 	lw		$a2		12($sp)
+ 	addi		$sp		$sp		16
   	jr		$ra
   	
   
   check_for_switch_string:
- 	addi		$sp		$sp		-8
+ 	addi		$sp		$sp		-16
  	sw		$ra		0($sp)
  	sw		$a0		4($sp)
+ 	sw		$a1		8($sp)
+ 	sw		$a2		12($sp)
  	
-  	# save current calculator mode in $t2
-  	move		$t2			$v0
-  	# get string length for argument
-	jal		get_string_length_extended
-  	# string to be checked against
-	la		$a1			string_switch_modes
+  	# move input in $a1
+  	move		$a1			$a0
+	la		$a0			string_switch_modes
+  	# get string length for argument and move to $a2
+	jal		strlen
+	move		$a2		$v0
+	# execute function
 	jal		simple_strncmp
-	# save output of simple_strncmp() in $t1
-	move		$t1			$v0
-	# save current calculator mode in $v0
-	move		$v0			$t2
-	# check whether "switch_mode" instruction has been passed
-	beq		$t1			1		switch_modes
+	# check whether "switch_mode" instruction has been passe
 	
-	lw		$ra		0($sp)
-	lw		$a0		4($sp)
-	addi		$sp		$sp		8
-	
+
+ 	lw		$ra		0($sp)
+ 	lw		$a0		4($sp)
+ 	lw		$a1		8($sp)
+ 	lw		$a2		12($sp)
+	addi		$sp		$sp		16
 	jr 		$ra
 	
- check_for_inverse_string_integer:
- 	addi		$sp		$sp		-4
+  switch_modes:
+	beq		$v1		0		trigger_mode_float
+	beq		$v1		1		trigger_mode_integer
+	
+ check_for_inverse_string:
+ 	addi		$sp		$sp		-16
  	sw		$ra		0($sp)
+ 	sw		$a0		4($sp)
+ 	sw		$a1		8($sp)
+ 	sw		$a2		12($sp)
  	
- 	jal		get_string_length_extended
- 	la		$a1		string_inverse
+ 	move		$a1		$a0
+ 	la		$a0		string_inverse
+ 	jal		strlen
+ 	move		$a2		$v0
  	jal		simple_strncmp
- 	beq		$v0		1		get_inverse_integer
+ 	
  	lw		$ra		0($sp)
- 	addi		$sp		$sp		4
+ 	lw		$a0		4($sp)
+ 	lw		$a1		8($sp)
+ 	lw		$a2		12($sp)
+ 	addi		$sp		$sp		-16
  	jr		$ra
-
-  check_for_inverse_string_float:
- 	addi		$sp		$sp		-4
- 	sw		$ra		0($sp)
- 	
- 	jal		get_string_length_extended
- 	la		$a1		string_inverse
- 	jal		simple_strncmp
- 	beq		$v0		1		get_inverse_float
- 	lw		$ra		0($sp)
- 	addi		$sp		$sp		4
- 	jr		$ra	
  	
  get_inverse_integer:
  	li		$t7		1
@@ -1589,28 +1600,25 @@ operation_float_maximum:
 	mov.s		$f3		$f12
 	j		calculator_float_loop
 						
- check_for_opposite_string_float:
- 	addi		$sp		$sp		-4
- 	sw		$ra		0($sp)
- 	
- 	jal		get_string_length_extended
- 	la		$a1		string_opposite
- 	jal		simple_strncmp
- 	beq		$v0		1		get_opposite_float
- 	lw		$ra		0($sp)
- 	addi		$sp		$sp		4
- 	jr		$ra
 	
- check_for_opposite_string_integer:
- 	addi		$sp		$sp		-4
+ check_for_opposite_string:
+ 	addi		$sp		$sp		-16
  	sw		$ra		0($sp)
+ 	sw		$a0		4($sp)
+ 	sw		$a1		8($sp)
+ 	sw		$a2		12($sp)
  	
- 	jal		get_string_length_extended
- 	la		$a1		string_opposite
- 	jal		simple_strncmp
- 	beq		$v0		1		get_opposite_integer
+ 	move		$a1		$a0
+ 	la		$a0		string_opposite
+ 	jal		strlen
+ 	move		$a2		$v0
+ 	jal		simple_strncmp 	
+ 	
  	lw		$ra		0($sp)
- 	addi		$sp		$sp		4
+ 	lw		$a0		4($sp)
+ 	lw		$a1		8($sp)
+ 	lw		$a2		12($sp)
+ 	addi		$sp		$sp		16
  	jr		$ra
  	
   get_opposite_float:
@@ -1625,60 +1633,86 @@ operation_float_maximum:
  	j		calculator_float_loop
  
   get_opposite_integer:
-	li		$t7		1
+  
  	li		$a1		2
  	mul		$a1		$s0		$a1
  	sub		$v0		$s0		$a1		
- 	jr		$ra
+ 	j		calculator_integer_loop
 	
  check_for_print_hexa_string:
- 	addi		$sp		$sp		-4
+ 	addi		$sp		$sp		-16
  	sw		$ra		0($sp)
- 	# get string length for argument
- 	jal		get_string_length_extended
+ 	sw		$a0		4($sp)
+ 	sw		$a1		8($sp)
+ 	sw		$a2		12($sp)
+ 	
+ 	move		$a1		$a0
+ 	la		$a0		string_print_hexa
+ 	# get string length for argument	
+ 	jal		strlen
+ 	move		$a2	$v0
+
  	# string to be checked against
- 	la		$a1		string_print_hexa
  	jal		simple_strncmp
  	# save output of simple_strncmp() in $t1
  	beq		$v0		1		print_hexa
  	
+	continue_for_print_hexa:
  	lw		$ra		0($sp)
- 	addi		$sp		$sp		4
+ 	lw		$a0		4($sp)
+ 	lw		$a1		8($sp)
+ 	lw		$a2		12($sp)
+ 	addi		$sp		$sp		16
  	jr		$ra
 
  check_for_print_binary_string:
- 	addi		$sp		$sp		-4
+ 	addi		$sp		$sp		-16
  	sw		$ra		0($sp)
+ 	sw		$a0		4($sp)
+ 	sw		$a1		8($sp)
+ 	sw		$a2		12($sp)
  	
+ 	move		$a1		$a0
+ 	la		$a0		string_print_binary
  	# get string length for argument
-	jal		get_string_length_extended
+	jal		strlen
+	move		$a2		$v0
  	# string to be checked against
- 	la		$a1		string_print_binary
  	jal		simple_strncmp
  	# save output of simple_strncmp() in $t1
  	beq		$v0		1		print_binary
  	
+ 	continue_check_for_print_binary_string:
  	lw		$ra		0($sp)
- 	addi		$sp		$sp		4
- 	
+ 	lw		$a0		4($sp)
+ 	lw		$a1		8($sp)
+ 	lw		$a2		12($sp)
+ 	addi		$sp		$sp		16
  	jr		$ra
  	
  check_for_print_exponent:
- 	addi		$sp		$sp		-4
+
+ 	addi		$sp		$sp		-16
  	sw		$ra		0($sp)
+ 	sw		$a0		4($sp)
+ 	sw		$a1		8($sp)
+ 	sw		$a2		12($sp)
  	
- 	jal		get_string_length_extended
- 	
- 	la		$a1		print_exponent
+ 	move		$a1		$a0
+ 	la		$a0		string_print_exponent
+ 	jal		strlen
+ 	move		$a2		$v0
  	jal		simple_strncmp
- 	
- 	beq		$v0		1		print_exponent_function
- 	
+	continue_print_exponent:
  	lw		$ra		0($sp)
- 	addi		$sp		$sp		4
+ 	lw		$a0		4($sp)
+ 	lw		$a1		8($sp)
+ 	lw		$a2		12($sp)
+ 	addi		$sp		$sp		16
  	jr		$ra
  	
  print_exponent_function:
+
  	# cast to int
  	cvt.w.s		$f0		$f3
  	# move to int register so we can start decomposing
@@ -1709,22 +1743,29 @@ operation_float_maximum:
  	exit_decompose_to_get_exponent_loop:
  		addi		$a1		$a1		127
  		move		$s0		$a1
- 		# let print_binary know it's coming from a different calculator
- 		li		$t6		1
  		j		print_binary
  
  
  print_binary:
+ 	# put the input $s0 into $t0
 	add		$t0		$zero		$s0
-	add		$t1		$zero		$zero
+	# reset value to 0
+	li		$t1		0
+	# load mask as a 1 in $t3
 	addi		$t3		$zero		1
+	# shift left to the right position
 	sll		$t3		$t3		31
+	# loop counter
 	addi		$t4		$zero		32
 	print_binary_loop:
+		# and the input with the mask
 		and 		$t1		$t0		$t3 
+		# print if it's a 0
 		beq 		$t1 		$zero		print_print_binary 
-
-		add 		$t1		$zero		$zero
+		
+		# reset value to 0
+		li		$t1		0
+		# load 1 into $t1
 		addi 		$t1		$zero 		1 
 		j print_print_binary
 
@@ -1740,8 +1781,10 @@ operation_float_maximum:
 		addi 		$a0		$0		0xA 	#ascii code for LF, if you have any trouble try 0xD for CR.
         	addi 		$v0 		$0		0xB 	#syscall 11 prints the lower 8 bits of $a0 as an ascii character.
 		syscall
-	beq	$t6	1 	move_back_to_floats
-	j	calculator_integer_start
+	# if call has come from the float calculator
+	li	$v0	1
+	beq	$t1	1 	move_back_to_floats
+	j	continue_check_for_print_binary_string
 # vim:ft=mips
  move_back_to_floats:
  	j	calculator_float_start
@@ -1799,6 +1842,7 @@ operation_float_maximum:
 		addi 		$a0		$0		0xA 	#ascii code for LF, if you have any trouble try 0xD for CR.
         	addi 		$v0 		$0		0xB 	#syscall 11 prints the lower 8 bits of $a0 as an ascii character.
         	syscall
+        	
  		j		calculator_float_start
  	
 
@@ -1870,25 +1914,9 @@ operation_float_maximum:
        	 	li		$v0		4
 		syscall
 		jal		print_newline
-		j 		calculator_integer_start
+		li		$v0		1
+		j 		continue_for_print_hexa
  	
- 	
-
- get_string_length_extended:
- 	addi		$sp		$sp		-8
- 	sw		$a0		0($sp)
- 	sw		$ra		4($sp)
-
- 	# get string length in $v0
-  	jal 		strlen
-  	#  substring length to be checked for simple_strncmp()
-  	move		$a2			$v0
-  	# remove the extra \0
-  	addi		$a2			$a2		-1
-  	j		get_string_length_extended_done
+ 
   	
-  	get_string_length_extended_done:
-  		lw		$a0		0($sp)
-  		lw		$ra		4($sp)
-  		addi		$sp		$sp		8
-  		jr		$ra
+
